@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/golang/protobuf/proto"
-	mp "github.com/tomdong2010/go-kafka-demo/producer/src/messageproto"
+	mp "github.com/tomdong2010/good-gokafka/producer/src/messageproto"
 )
 
 //Content struct

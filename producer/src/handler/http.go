@@ -6,8 +6,8 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/tomdong2010/go-kafka-demo/producer/src/pub"
-	"github.com/tomdong2010/go-kafka-demo/producer/src/utils"
+	"github.com/tomdong2010/good-gokafka/producer/src/pub"
+	"github.com/tomdong2010/good-gokafka/producer/src/utils"
 )
 
 //HTTPHandler struct

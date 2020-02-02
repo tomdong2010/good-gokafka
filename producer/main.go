@@ -6,8 +6,8 @@ import (
 	"os"
 
 	configEnv "github.com/joho/godotenv"
-	"github.com/wuriyanto48/go-kafka-demo/producer/src/handler"
-	"github.com/wuriyanto48/go-kafka-demo/producer/src/pub"
+	"github.com/tomdong2010/good-gokafka/producer/src/handler"
+	"github.com/tomdong2010/good-gokafka/producer/src/pub"
 )
 
 func main() {

@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"github.com/tomdong2010/go-kafka-demo/consumer/src/sub"
+	"github.com/tomdong2010/good-gokafka/consumer/src/sub"
 )
 
 //WorkerHandler struct
