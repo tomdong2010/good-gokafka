@@ -14,7 +14,7 @@ $ docker-compose up
 
   install dependencies
 ```shell
-$ glide install
+$ go mod vendor
 ```
 ```shell
 $ go build
@@ -41,7 +41,7 @@ http://localhost:3000/api/send \
 
   install dependencies
 ```shell
-$ glide install
+$ go mod vendor
 ```
 ```shell
 $ go build
