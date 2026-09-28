@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"testing"
@@ -27,9 +28,26 @@ func TestHandle(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := h.Handle(context.Background(), tt.rec); (err != nil) != tt.wantErr {
+			err := h.Handle(context.Background(), tt.rec)
+			if (err != nil) != tt.wantErr {
 				t.Fatalf("Handle() = %v, wantErr %v", err, tt.wantErr)
 			}
+			if err != nil && !sub.IsPermanent(err) {
+				t.Fatalf("decode error %v should be permanent", err)
+			}
 		})
+	}
+}
+
+func TestSimulateFailures(t *testing.T) {
+	ok := func(context.Context, *sub.Record) error { return nil }
+	if err := SimulateFailures(ok, 1)(context.Background(), &sub.Record{}); !errors.Is(err, ErrSimulated) {
+		t.Errorf("rate 1: err = %v", err)
+	}
+	if err := SimulateFailures(ok, 0)(context.Background(), &sub.Record{}); err != nil {
+		t.Errorf("rate 0: err = %v", err)
+	}
+	if err := SimulateFailures(ok, 1)(context.Background(), &sub.Record{}); sub.IsPermanent(err) {
+		t.Error("simulated failures must be retryable")
 	}
 }

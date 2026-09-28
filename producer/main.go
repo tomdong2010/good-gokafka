@@ -13,13 +13,23 @@ import (
 	"time"
 
 	"github.com/tomdong2010/good-gokafka/internal/config"
+	"github.com/tomdong2010/good-gokafka/internal/kafka"
 	"github.com/tomdong2010/good-gokafka/internal/message"
+	"github.com/tomdong2010/good-gokafka/internal/metrics"
 	"github.com/tomdong2010/good-gokafka/producer/handler"
 	"github.com/tomdong2010/good-gokafka/producer/pub"
 )
 
 func main() {
-	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	if err := config.LoadDotEnv(); err != nil {
+		slog.Error("producer stopped", "err", err)
+		os.Exit(1)
+	}
+	log, err := config.Logger()
+	if err != nil {
+		slog.Error("producer stopped", "err", err)
+		os.Exit(1)
+	}
 	if err := run(log); err != nil {
 		log.Error("producer stopped", "err", err)
 		os.Exit(1)
@@ -27,9 +37,6 @@ func main() {
 }
 
 func run(log *slog.Logger) error {
-	if err := config.LoadDotEnv(); err != nil {
-		return err
-	}
 	brokers, err := config.Brokers("KAFKA_ADDRESS")
 	if err != nil {
 		return err
@@ -48,7 +55,16 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	publisher, err := pub.NewKafkaPublisher(brokers, pub.NewConfig(config.String("KAFKA_CLIENT_ID", "good-gokafka-producer")))
+	security, err := kafka.SecurityFromEnv()
+	if err != nil {
+		return err
+	}
+	producerCfg := kafka.ProducerConfig(config.String("KAFKA_CLIENT_ID", "good-gokafka-producer"))
+	if err := security.Apply(producerCfg); err != nil {
+		return err
+	}
+
+	publisher, err := pub.NewKafkaPublisher(brokers, producerCfg)
 	if err != nil {
 		return err
 	}
@@ -58,9 +74,15 @@ func run(log *slog.Logger) error {
 		}
 	}()
 
+	reg := metrics.NewRegistry()
+	api := handler.NewHTTPHandler(topic, publisher, codec, handler.Options{Logger: log, Registerer: reg})
+	mux := http.NewServeMux()
+	mux.Handle("/", api.Routes())
+	mux.Handle("GET /metrics", metrics.Handler(reg))
+
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           handler.NewHTTPHandler(topic, publisher, codec, log).Routes(),
+		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,

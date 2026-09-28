@@ -36,7 +36,7 @@ func TestPublishError(t *testing.T) {
 	prd.ExpectSendMessageAndFail(sarama.ErrNotLeaderForPartition)
 
 	p := NewKafkaPublisherFrom(prd)
-	defer p.Close()
+	t.Cleanup(func() { _ = p.Close() })
 	if _, err := p.Publish(context.Background(), Record{Topic: "t", Value: []byte("v")}); !errors.Is(err, sarama.ErrNotLeaderForPartition) {
 		t.Fatalf("err = %v", err)
 	}
@@ -44,16 +44,10 @@ func TestPublishError(t *testing.T) {
 
 func TestPublishCancelledContext(t *testing.T) {
 	p := NewKafkaPublisherFrom(mocks.NewSyncProducer(t, nil))
-	defer p.Close()
+	t.Cleanup(func() { _ = p.Close() })
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if _, err := p.Publish(ctx, Record{Topic: "t"}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v", err)
-	}
-}
-
-func TestNewConfigIsValid(t *testing.T) {
-	if err := NewConfig("test").Validate(); err != nil {
-		t.Fatal(err)
 	}
 }

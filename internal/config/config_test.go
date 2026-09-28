@@ -58,3 +58,46 @@ func TestDuration(t *testing.T) {
 		t.Error("Duration(invalid): expected error")
 	}
 }
+
+func TestIntAndBool(t *testing.T) {
+	t.Setenv("N", "7")
+	t.Setenv("B", "false")
+	if n, err := Int("N", 1); err != nil || n != 7 {
+		t.Errorf("Int(N) = %d, %v", n, err)
+	}
+	t.Setenv("F", "0.25")
+	if f, err := Float("F", 0); err != nil || f != 0.25 {
+		t.Errorf("Float(F) = %v, %v", f, err)
+	}
+	if b, err := Bool("B", true); err != nil || b {
+		t.Errorf("Bool(B) = %v, %v", b, err)
+	}
+	if b, err := Bool("UNSET_BOOL", true); err != nil || !b {
+		t.Errorf("Bool(unset) = %v, %v", b, err)
+	}
+	t.Setenv("N", "many")
+	if _, err := Int("N", 1); err == nil {
+		t.Error("Int(invalid): expected error")
+	}
+	t.Setenv("B", "maybe")
+	if _, err := Bool("B", true); err == nil {
+		t.Error("Bool(invalid): expected error")
+	}
+}
+
+func TestLogger(t *testing.T) {
+	t.Setenv("LOG_LEVEL", "debug")
+	t.Setenv("LOG_FORMAT", "json")
+	if _, err := Logger(); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LOG_FORMAT", "xml")
+	if _, err := Logger(); err == nil {
+		t.Error("expected error for unknown format")
+	}
+	t.Setenv("LOG_FORMAT", "")
+	t.Setenv("LOG_LEVEL", "loud")
+	if _, err := Logger(); err == nil {
+		t.Error("expected error for unknown level")
+	}
+}

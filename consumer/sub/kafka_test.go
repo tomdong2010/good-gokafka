@@ -24,9 +24,13 @@ func (s *fakeSession) MarkMessage(m *sarama.ConsumerMessage, _ string) {
 type fakeClaim struct {
 	sarama.ConsumerGroupClaim
 	msgs chan *sarama.ConsumerMessage
+	hwm  int64
 }
 
 func (c *fakeClaim) Messages() <-chan *sarama.ConsumerMessage { return c.msgs }
+func (c *fakeClaim) Topic() string                            { return "t" }
+func (c *fakeClaim) Partition() int32                         { return 0 }
+func (c *fakeClaim) HighWaterMarkOffset() int64               { return c.hwm }
 
 func TestConsumeClaimMarksEveryRecord(t *testing.T) {
 	claim := &fakeClaim{msgs: make(chan *sarama.ConsumerMessage, 3)}
@@ -41,7 +45,7 @@ func TestConsumeClaimMarksEveryRecord(t *testing.T) {
 	close(claim.msgs)
 
 	var seen []int64
-	g := &groupHandler{
+	g := &groupHandler{metrics: newSubMetrics(nil),
 		log: slog.New(slog.NewTextHandler(io.Discard, nil)),
 		handle: func(_ context.Context, r *Record) error {
 			seen = append(seen, r.Offset)
@@ -71,14 +75,8 @@ func TestConsumeClaimMarksEveryRecord(t *testing.T) {
 func TestConsumeClaimStopsOnCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	g := &groupHandler{log: slog.Default(), handle: func(context.Context, *Record) error { return nil }}
+	g := &groupHandler{metrics: newSubMetrics(nil), log: slog.Default(), handle: func(context.Context, *Record) error { return nil }}
 	if err := g.ConsumeClaim(&fakeSession{ctx: ctx}, &fakeClaim{msgs: make(chan *sarama.ConsumerMessage)}); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestNewConfigIsValid(t *testing.T) {
-	if err := NewConfig("test").Validate(); err != nil {
 		t.Fatal(err)
 	}
 }

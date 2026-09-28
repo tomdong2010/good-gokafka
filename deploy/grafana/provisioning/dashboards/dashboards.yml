@@ -1,0 +1,6 @@
+apiVersion: 1
+providers:
+  - name: good-gokafka
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards

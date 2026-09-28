@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -67,6 +69,45 @@ func Duration(key string, def time.Duration) (time.Duration, error) {
 	return d, nil
 }
 
+// Int parses key as an integer, returning def if it is unset.
+func Int(key string, def int) (int, error) {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return def, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", key, err)
+	}
+	return n, nil
+}
+
+// Float parses key as a float64, returning def if it is unset.
+func Float(key string, def float64) (float64, error) {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return def, nil
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", key, err)
+	}
+	return f, nil
+}
+
+// Bool parses key as a boolean (1/0, true/false, ...), returning def if it is unset.
+func Bool(key string, def bool) (bool, error) {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return def, nil
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return false, fmt.Errorf("%s: %w", key, err)
+	}
+	return b, nil
+}
+
 // List returns key split on commas with blanks dropped.
 func List(key string) []string {
 	return splitList(os.Getenv(key))
@@ -80,4 +121,22 @@ func splitList(s string) []string {
 		}
 	}
 	return out
+}
+
+// Logger builds the process logger from LOG_LEVEL (debug, info, warn, error)
+// and LOG_FORMAT (text or json).
+func Logger() (*slog.Logger, error) {
+	var level slog.Level
+	if err := level.UnmarshalText([]byte(String("LOG_LEVEL", "info"))); err != nil {
+		return nil, fmt.Errorf("LOG_LEVEL: %w", err)
+	}
+	opts := &slog.HandlerOptions{Level: level}
+	switch format := strings.ToLower(String("LOG_FORMAT", "text")); format {
+	case "text":
+		return slog.New(slog.NewTextHandler(os.Stdout, opts)), nil
+	case "json":
+		return slog.New(slog.NewJSONHandler(os.Stdout, opts)), nil
+	default:
+		return nil, fmt.Errorf("LOG_FORMAT: unknown format %q (want text or json)", format)
+	}
 }
