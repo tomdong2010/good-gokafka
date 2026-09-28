@@ -8,6 +8,8 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/tomdong2010/good-gokafka)](https://goreportcard.com/report/github.com/tomdong2010/good-gokafka)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/tomdong2010/good-gokafka)](go.mod)
 [![Kafka](https://img.shields.io/badge/Kafka-3.8%20KRaft-231F20?logo=apachekafka)](docker-compose.yml)
+[![Release](https://img.shields.io/github/v/release/tomdong2010/good-gokafka)](https://github.com/tomdong2010/good-gokafka/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 English | [简体中文](README.zh-CN.md)
 
@@ -86,6 +88,16 @@ Things to try:
   the per-partition lag. Metrics are also exposed directly on `:3000/metrics` (producer) and `:9100/metrics` (consumer).
 - **Open the Kafka web UI.** `docker compose --profile ui up -d`, then browse to http://localhost:8080.
 - **Tear it all down.** `make down`
+
+### Prebuilt binaries and images
+
+Each [release](https://github.com/tomdong2010/good-gokafka/releases) ships binaries for Linux, macOS and Windows
+(amd64 and arm64) and multi-arch images:
+
+```shell
+docker pull ghcr.io/tomdong2010/good-gokafka-producer:latest
+docker pull ghcr.io/tomdong2010/good-gokafka-consumer:latest
+```
 
 ### Running from source
 
@@ -211,6 +223,10 @@ scripts/load.sh      load generator for the dashboard
 - [ ] DLQ replay tool
 
 Ideas and PRs are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
+
+[MIT](LICENSE). Release notes are in [CHANGELOG.md](CHANGELOG.md).
 
 ## Acknowledgements
 

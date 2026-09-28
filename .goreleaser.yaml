@@ -1,0 +1,54 @@
+# Release binaries for both services: git tag vX.Y.Z && git push origin vX.Y.Z
+# (runs in .github/workflows/release.yml). Test locally: goreleaser release --snapshot --clean
+version: 2
+project_name: good-gokafka
+
+builds:
+  - &build
+    id: producer
+    main: ./producer
+    binary: producer
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags: ["-s -w -X main.version={{ .Version }}"]
+  - <<: *build
+    id: consumer
+    main: ./consumer
+    binary: consumer
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+      - README.zh-CN.md
+      - producer/.env
+      - consumer/.env
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^Merge pull request"
+      - "^Merge branch"
+
+release:
+  footer: |
+    ## Docker images
+
+    ```shell
+    docker pull ghcr.io/tomdong2010/good-gokafka-producer:{{ .Version }}
+    docker pull ghcr.io/tomdong2010/good-gokafka-consumer:{{ .Version }}
+    ```
+
+    See the [README](https://github.com/tomdong2010/good-gokafka#quick-start) for a one-command demo.

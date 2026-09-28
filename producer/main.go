@@ -20,6 +20,9 @@ import (
 	"github.com/tomdong2010/good-gokafka/producer/pub"
 )
 
+// version is set at build time with -ldflags "-X main.version=...".
+var version = "dev"
+
 func main() {
 	if err := config.LoadDotEnv(); err != nil {
 		slog.Error("producer stopped", "err", err)
@@ -94,7 +97,7 @@ func run(log *slog.Logger) error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		log.Info("producer listening", "addr", addr, "brokers", brokers, "topic", topic, "format", codec.ContentType())
+		log.Info("producer listening", "version", version, "addr", addr, "brokers", brokers, "topic", topic, "format", codec.ContentType())
 		errCh <- srv.ListenAndServe()
 	}()
 

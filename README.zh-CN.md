@@ -8,6 +8,8 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/tomdong2010/good-gokafka)](https://goreportcard.com/report/github.com/tomdong2010/good-gokafka)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/tomdong2010/good-gokafka)](go.mod)
 [![Kafka](https://img.shields.io/badge/Kafka-3.8%20KRaft-231F20?logo=apachekafka)](docker-compose.yml)
+[![Release](https://img.shields.io/github/v/release/tomdong2010/good-gokafka)](https://github.com/tomdong2010/good-gokafka/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 [English](README.md) | 简体中文
 
@@ -85,6 +87,16 @@ docker compose logs -f consumer
   producer 在 `:3000/metrics`，consumer 在 `:9100/metrics`。
 - **打开 Kafka Web UI**：`docker compose --profile ui up -d`，然后访问 http://localhost:8080
 - **全部清理**：`make down`
+
+### 预编译二进制与镜像
+
+每个 [Release](https://github.com/tomdong2010/good-gokafka/releases) 都会提供 Linux、macOS、Windows（amd64 / arm64）
+的二进制文件，以及多架构 Docker 镜像：
+
+```shell
+docker pull ghcr.io/tomdong2010/good-gokafka-producer:latest
+docker pull ghcr.io/tomdong2010/good-gokafka-consumer:latest
+```
 
 ### 从源码运行
 
@@ -203,6 +215,10 @@ scripts/load.sh      为看板制造流量的压测脚本
 - [ ] 死信消息重放工具
 
 欢迎提想法和 PR，详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+## 许可证
+
+[MIT](LICENSE)。版本更新记录见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 致谢
 

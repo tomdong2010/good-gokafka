@@ -1,6 +1,6 @@
 PROTOC ?= protoc
 
-.PHONY: help build test integration lint proto up demo monitoring load down send
+.PHONY: help release-snapshot build test integration lint proto up demo monitoring load down send
 
 help: ## Show this help
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*## "}{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -15,6 +15,9 @@ test: ## Run unit tests with the race detector
 integration: ## Run integration tests against Kafka from docker compose
 	docker compose up -d --wait kafka
 	go test -tags integration -race -count=1 ./integration/...
+
+release-snapshot: ## Build release archives locally into ./dist (needs goreleaser)
+	goreleaser release --snapshot --clean
 
 lint: ## Run golangci-lint
 	golangci-lint run ./...
