@@ -76,9 +76,3 @@ func TestConsumeClaimStopsOnCancel(t *testing.T) {
 		t.Fatal(err)
 	}
 }
-
-func TestNewConfigIsValid(t *testing.T) {
-	if err := NewConfig("test").Validate(); err != nil {
-		t.Fatal(err)
-	}
-}

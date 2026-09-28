@@ -3,19 +3,32 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
+
+	"github.com/IBM/sarama"
 
 	"github.com/tomdong2010/good-gokafka/consumer/handler"
 	"github.com/tomdong2010/good-gokafka/consumer/sub"
 	"github.com/tomdong2010/good-gokafka/internal/config"
+	"github.com/tomdong2010/good-gokafka/internal/kafka"
 	"github.com/tomdong2010/good-gokafka/internal/message"
 )
 
 func main() {
-	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	if err := config.LoadDotEnv(); err != nil {
+		slog.Error("consumer stopped", "err", err)
+		os.Exit(1)
+	}
+	log, err := config.Logger()
+	if err != nil {
+		slog.Error("consumer stopped", "err", err)
+		os.Exit(1)
+	}
 	if err := run(log); err != nil {
 		log.Error("consumer stopped", "err", err)
 		os.Exit(1)
@@ -23,9 +36,6 @@ func main() {
 }
 
 func run(log *slog.Logger) error {
-	if err := config.LoadDotEnv(); err != nil {
-		return err
-	}
 	// ZOOKEEPER_HOST is accepted for old .env files; it always pointed at a Kafka broker.
 	brokers, err := config.Brokers("ZOOKEEPER_HOST")
 	if err != nil {
@@ -41,9 +51,15 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	groupID := config.String("KAFKA_GROUP_ID", "good-gokafka-consumer")
+	clientID := config.String("KAFKA_CLIENT_ID", "good-gokafka-consumer")
 
-	subscriber, err := sub.NewKafkaSubscriber(brokers, groupID,
-		sub.NewConfig(config.String("KAFKA_CLIENT_ID", "good-gokafka-consumer")), log)
+	opts, closeDLQ, err := retryOptions(brokers, clientID, log)
+	if err != nil {
+		return err
+	}
+	defer closeDLQ()
+
+	subscriber, err := sub.NewKafkaSubscriber(brokers, groupID, kafka.ConsumerConfig(clientID), opts, log)
 	if err != nil {
 		return err
 	}
@@ -56,11 +72,46 @@ func run(log *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	log.Info("consumer started", "brokers", brokers, "topics", topics, "group", groupID)
+	log.Info("consumer started", "brokers", brokers, "topics", topics, "group", groupID,
+		"max_retries", opts.MaxRetries, "dead_letter", opts.DeadLetter != nil)
 	worker := handler.NewWorkerHandler(codec, log)
 	if err := subscriber.Subscribe(ctx, topics, worker.Handle); err != nil {
 		return err
 	}
 	log.Info("shutting down")
 	return nil
+}
+
+// retryOptions reads the retry and dead-letter settings and, when the
+// dead-letter topic is enabled, connects the producer that writes to it.
+func retryOptions(brokers []string, clientID string, log *slog.Logger) (sub.Options, func(), error) {
+	noop := func() {}
+	maxRetries, err := config.Int("MAX_RETRIES", 3)
+	if err != nil {
+		return sub.Options{}, noop, err
+	}
+	if maxRetries < 0 {
+		return sub.Options{}, noop, fmt.Errorf("MAX_RETRIES must not be negative, got %d", maxRetries)
+	}
+	retryBackoff, err := config.Duration("RETRY_BACKOFF", 200*time.Millisecond)
+	if err != nil {
+		return sub.Options{}, noop, err
+	}
+	opts := sub.Options{MaxRetries: maxRetries, RetryBackoff: retryBackoff}
+
+	enabled, err := config.Bool("DLQ_ENABLED", true)
+	if err != nil || !enabled {
+		return opts, noop, err
+	}
+	producer, err := sarama.NewSyncProducer(brokers, kafka.ProducerConfig(clientID+"-dlq"))
+	if err != nil {
+		return sub.Options{}, noop, fmt.Errorf("create dead-letter producer: %w", err)
+	}
+	dlq := sub.NewKafkaDeadLetter(producer, config.String("DLQ_SUFFIX", ".dlq"))
+	opts.DeadLetter = dlq
+	return opts, func() {
+		if err := dlq.Close(); err != nil {
+			log.Error("close dead-letter producer", "err", err)
+		}
+	}, nil
 }

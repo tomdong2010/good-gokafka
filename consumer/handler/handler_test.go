@@ -27,8 +27,12 @@ func TestHandle(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := h.Handle(context.Background(), tt.rec); (err != nil) != tt.wantErr {
+			err := h.Handle(context.Background(), tt.rec)
+			if (err != nil) != tt.wantErr {
 				t.Fatalf("Handle() = %v, wantErr %v", err, tt.wantErr)
+			}
+			if err != nil && !sub.IsPermanent(err) {
+				t.Fatalf("decode error %v should be permanent", err)
 			}
 		})
 	}

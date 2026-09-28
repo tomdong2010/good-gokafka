@@ -29,7 +29,8 @@ func (h *WorkerHandler) Handle(_ context.Context, r *sub.Record) error {
 	codec := message.CodecForContentType(r.Headers[message.ContentTypeHeader], h.codec)
 	msg, err := codec.Decode(r.Value)
 	if err != nil {
-		return err
+		// Retrying cannot fix a malformed record.
+		return sub.Permanent(err)
 	}
 
 	h.log.Info("message received",

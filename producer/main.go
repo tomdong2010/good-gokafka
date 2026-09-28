@@ -13,13 +13,22 @@ import (
 	"time"
 
 	"github.com/tomdong2010/good-gokafka/internal/config"
+	"github.com/tomdong2010/good-gokafka/internal/kafka"
 	"github.com/tomdong2010/good-gokafka/internal/message"
 	"github.com/tomdong2010/good-gokafka/producer/handler"
 	"github.com/tomdong2010/good-gokafka/producer/pub"
 )
 
 func main() {
-	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	if err := config.LoadDotEnv(); err != nil {
+		slog.Error("producer stopped", "err", err)
+		os.Exit(1)
+	}
+	log, err := config.Logger()
+	if err != nil {
+		slog.Error("producer stopped", "err", err)
+		os.Exit(1)
+	}
 	if err := run(log); err != nil {
 		log.Error("producer stopped", "err", err)
 		os.Exit(1)
@@ -27,9 +36,6 @@ func main() {
 }
 
 func run(log *slog.Logger) error {
-	if err := config.LoadDotEnv(); err != nil {
-		return err
-	}
 	brokers, err := config.Brokers("KAFKA_ADDRESS")
 	if err != nil {
 		return err
@@ -48,7 +54,7 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	publisher, err := pub.NewKafkaPublisher(brokers, pub.NewConfig(config.String("KAFKA_CLIENT_ID", "good-gokafka-producer")))
+	publisher, err := pub.NewKafkaPublisher(brokers, kafka.ProducerConfig(config.String("KAFKA_CLIENT_ID", "good-gokafka-producer")))
 	if err != nil {
 		return err
 	}

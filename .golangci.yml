@@ -1,0 +1,21 @@
+version: "2"
+
+run:
+  build-tags: [integration]
+
+linters:
+  enable:
+    - bodyclose
+    - errorlint
+    - misspell
+    - nolintlint
+    - unconvert
+    - usestdlibvars
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes: [github.com/tomdong2010/good-gokafka]

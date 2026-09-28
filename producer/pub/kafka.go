@@ -35,21 +35,6 @@ type KafkaPublisher struct {
 	producer sarama.SyncProducer
 }
 
-// NewConfig returns the producer configuration: idempotent writes acknowledged by
-// all in-sync replicas, so retries can neither lose nor duplicate records.
-func NewConfig(clientID string) *sarama.Config {
-	cfg := sarama.NewConfig()
-	cfg.ClientID = clientID
-	cfg.Producer.RequiredAcks = sarama.WaitForAll
-	cfg.Producer.Idempotent = true
-	cfg.Net.MaxOpenRequests = 1 // required by the idempotent producer
-	cfg.Producer.Retry.Max = 5
-	cfg.Producer.Return.Successes = true
-	cfg.Producer.Return.Errors = true
-	cfg.Producer.Compression = sarama.CompressionSnappy
-	return cfg
-}
-
 // NewKafkaPublisher connects a synchronous producer to brokers.
 func NewKafkaPublisher(brokers []string, cfg *sarama.Config) (*KafkaPublisher, error) {
 	prd, err := sarama.NewSyncProducer(brokers, cfg)
