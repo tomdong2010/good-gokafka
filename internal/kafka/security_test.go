@@ -134,6 +134,7 @@ func TestApplyTLS(t *testing.T) {
 		"missing CA file":   {TLS: true, TLSCAFile: filepath.Join(dir, "missing.pem")},
 		"CA without certs":  {TLS: true, TLSCAFile: empty},
 		"cert without key":  {TLS: true, TLSCertFile: certFile},
+		"key without cert":  {TLSKeyFile: keyFile}, // must not silently fall back to plaintext
 		"key is not a cert": {TLS: true, TLSCertFile: keyFile, TLSKeyFile: keyFile},
 	} {
 		if err := bad.Apply(ProducerConfig("test")); err == nil {

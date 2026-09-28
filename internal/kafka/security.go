@@ -55,7 +55,7 @@ func SecurityFromEnv() (Security, error) {
 
 // Apply configures TLS and SASL on cfg.
 func (s Security) Apply(cfg *sarama.Config) error {
-	if s.TLS || s.TLSCAFile != "" || s.TLSCertFile != "" {
+	if s.TLS || s.TLSCAFile != "" || s.TLSCertFile != "" || s.TLSKeyFile != "" {
 		tlsCfg, err := s.tlsConfig()
 		if err != nil {
 			return err
