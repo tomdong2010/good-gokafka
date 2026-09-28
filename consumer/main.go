@@ -23,6 +23,9 @@ import (
 	"github.com/tomdong2010/good-gokafka/internal/metrics"
 )
 
+// version is set at build time with -ldflags "-X main.version=...".
+var version = "dev"
+
 func main() {
 	if err := config.LoadDotEnv(); err != nil {
 		slog.Error("consumer stopped", "err", err)
@@ -103,7 +106,7 @@ func run(log *slog.Logger) error {
 	stopMetrics := serveMetrics(metricsAddr, reg, log)
 	defer stopMetrics()
 
-	log.Info("consumer started", "brokers", brokers, "topics", topics, "group", groupID,
+	log.Info("consumer started", "version", version, "brokers", brokers, "topics", topics, "group", groupID,
 		"max_retries", opts.MaxRetries, "dead_letter", opts.DeadLetter != nil, "metrics", metricsAddr)
 	var handle sub.Handler = handler.NewWorkerHandler(codec, log).Handle
 	if failureRate > 0 {
