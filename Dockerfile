@@ -2,7 +2,7 @@
 # Builds either service: docker build --build-arg APP=producer|consumer .
 # The build stage runs on the host platform and cross-compiles, so multi-arch
 # images build without emulation.
-FROM --platform=$BUILDPLATFORM golang:1.24-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
