@@ -11,6 +11,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
+
 	"github.com/tomdong2010/good-gokafka/internal/message"
 	"github.com/tomdong2010/good-gokafka/producer/pub"
 )
@@ -35,7 +38,7 @@ const validBody = `{"from":"Wuriyanto","content":{"header":"This is Message 2","
 func do(t *testing.T, p pub.Publisher, method, path, body string) (*httptest.ResponseRecorder, map[string]any) {
 	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	h := NewHTTPHandler("topic", p, message.JSONCodec{}, log).Routes()
+	h := NewHTTPHandler("topic", p, message.JSONCodec{}, Options{Logger: log}).Routes()
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(method, path, strings.NewReader(body)))
 	var resp map[string]any
@@ -108,5 +111,31 @@ func TestPublishBrokerError(t *testing.T) {
 func TestHealthz(t *testing.T) {
 	if rec, _ := do(t, &fakePublisher{}, http.MethodGet, "/healthz", ""); rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
+	}
+}
+
+func TestMetrics(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	h := NewHTTPHandler("topic", &fakePublisher{}, message.JSONCodec{}, Options{Logger: log, Registerer: reg}).Routes()
+	for _, body := range []string{validBody, validBody, `{"from":"a","content":{}}`} {
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/api/send", strings.NewReader(body)))
+	}
+
+	want := `
+# HELP gokafka_producer_messages_total Messages received by the API, by topic and result (sent, invalid, failed).
+# TYPE gokafka_producer_messages_total counter
+gokafka_producer_messages_total{result="failed",topic="topic"} 0
+gokafka_producer_messages_total{result="invalid",topic="topic"} 1
+gokafka_producer_messages_total{result="sent",topic="topic"} 2
+`
+	if err := testutil.GatherAndCompare(reg, strings.NewReader(want), "gokafka_producer_messages_total"); err != nil {
+		t.Error(err)
+	}
+	if n := testutil.CollectAndCount(reg, "gokafka_producer_http_requests_total"); n != 2 { // codes 200 and 422
+		t.Errorf("http_requests_total has %d series, want 2", n)
+	}
+	if n := testutil.CollectAndCount(reg, "gokafka_producer_publish_duration_seconds"); n != 1 {
+		t.Errorf("publish_duration_seconds has %d series, want 1", n)
 	}
 }

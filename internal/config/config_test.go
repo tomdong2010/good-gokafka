@@ -65,6 +65,10 @@ func TestIntAndBool(t *testing.T) {
 	if n, err := Int("N", 1); err != nil || n != 7 {
 		t.Errorf("Int(N) = %d, %v", n, err)
 	}
+	t.Setenv("F", "0.25")
+	if f, err := Float("F", 0); err != nil || f != 0.25 {
+		t.Errorf("Float(F) = %v, %v", f, err)
+	}
 	if b, err := Bool("B", true); err != nil || b {
 		t.Errorf("Bool(B) = %v, %v", b, err)
 	}

@@ -38,9 +38,10 @@ type Subscriber interface {
 // are balanced across every instance started with the same group ID, and
 // offsets are committed so a restart resumes where it stopped.
 type KafkaSubscriber struct {
-	group sarama.ConsumerGroup
-	opts  Options
-	log   *slog.Logger
+	group   sarama.ConsumerGroup
+	opts    Options
+	log     *slog.Logger
+	metrics *subMetrics
 }
 
 // NewKafkaSubscriber joins groupID on brokers.
@@ -57,7 +58,7 @@ func NewKafkaSubscriberFrom(group sarama.ConsumerGroup, opts Options, log *slog.
 	if log == nil {
 		log = slog.Default()
 	}
-	return &KafkaSubscriber{group: group, opts: opts, log: log}
+	return &KafkaSubscriber{group: group, opts: opts, log: log, metrics: newSubMetrics(opts.Registerer)}
 }
 
 // Subscribe implements Subscriber.
@@ -68,7 +69,7 @@ func (s *KafkaSubscriber) Subscribe(ctx context.Context, topics []string, h Hand
 		}
 	}()
 
-	gh := &groupHandler{handle: h, opts: s.opts, log: s.log}
+	gh := &groupHandler{handle: h, opts: s.opts, log: s.log, metrics: s.metrics}
 	for {
 		// Consume returns whenever the group rebalances, so it has to be called in a loop.
 		if err := s.group.Consume(ctx, topics, gh); err != nil {
@@ -89,9 +90,10 @@ func (s *KafkaSubscriber) Close() error {
 }
 
 type groupHandler struct {
-	handle Handler
-	opts   Options
-	log    *slog.Logger
+	handle  Handler
+	opts    Options
+	log     *slog.Logger
+	metrics *subMetrics
 }
 
 func (g *groupHandler) Setup(sess sarama.ConsumerGroupSession) error {
@@ -103,17 +105,24 @@ func (g *groupHandler) Cleanup(sarama.ConsumerGroupSession) error { return nil }
 
 func (g *groupHandler) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
 	ctx := sess.Context()
+	g.metrics.initTopic(claim.Topic())
+	lag := g.metrics.lag.WithLabelValues(claim.Topic(), partitionLabel(claim.Partition()))
+	// The partition may move to another member, which then reports its lag.
+	defer g.metrics.lag.DeleteLabelValues(claim.Topic(), partitionLabel(claim.Partition()))
 	for {
 		select {
 		case msg, ok := <-claim.Messages():
 			if !ok {
 				return nil
 			}
+			start := time.Now()
 			if err := g.process(ctx, toRecord(msg)); err != nil {
 				// Only happens on shutdown or rebalance: leave the record unmarked
 				// so the next owner of the partition receives it again.
 				return nil
 			}
+			g.metrics.duration.WithLabelValues(msg.Topic).Observe(time.Since(start).Seconds())
+			lag.Set(float64(max(claim.HighWaterMarkOffset()-msg.Offset-1, 0)))
 			// Marked only once handled, so a crash replays the record (at-least-once).
 			sess.MarkMessage(msg, "")
 		case <-ctx.Done():
@@ -128,6 +137,7 @@ func (g *groupHandler) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sara
 func (g *groupHandler) process(ctx context.Context, rec *Record) error {
 	err := g.handleWithRetry(ctx, rec)
 	if err == nil {
+		g.metrics.records.WithLabelValues(rec.Topic, resultOK).Inc()
 		return nil
 	}
 	if ctx.Err() != nil {
@@ -136,6 +146,7 @@ func (g *groupHandler) process(ctx context.Context, rec *Record) error {
 	log := g.log.With("topic", rec.Topic, "partition", rec.Partition, "offset", rec.Offset, "err", err)
 	if g.opts.DeadLetter == nil {
 		log.Error("skip record")
+		g.metrics.records.WithLabelValues(rec.Topic, resultSkipped).Inc()
 		return nil
 	}
 	// A record must not be dropped because the dead-letter topic is briefly
@@ -144,8 +155,10 @@ func (g *groupHandler) process(ctx context.Context, rec *Record) error {
 		dlqErr := g.opts.DeadLetter.Send(ctx, rec, err)
 		if dlqErr == nil {
 			log.Warn("record sent to dead-letter topic")
+			g.metrics.records.WithLabelValues(rec.Topic, resultDeadLetter).Inc()
 			return nil
 		}
+		g.metrics.deadLetterErrors.WithLabelValues(rec.Topic).Inc()
 		log.Error("dead-letter send failed", "dlq_err", dlqErr, "attempt", attempt+1)
 		if sleepErr := sleep(ctx, backoff(g.retryBackoff(), attempt)); sleepErr != nil {
 			return sleepErr
@@ -159,6 +172,7 @@ func (g *groupHandler) handleWithRetry(ctx context.Context, rec *Record) error {
 		if err = g.handle(ctx, rec); err == nil || IsPermanent(err) || attempt >= g.opts.MaxRetries {
 			return err
 		}
+		g.metrics.retries.WithLabelValues(rec.Topic).Inc()
 		g.log.Warn("retry record", "topic", rec.Topic, "partition", rec.Partition, "offset", rec.Offset,
 			"attempt", attempt+1, "err", err)
 		if sleepErr := sleep(ctx, backoff(g.retryBackoff(), attempt)); sleepErr != nil {

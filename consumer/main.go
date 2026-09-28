@@ -3,20 +3,24 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/IBM/sarama"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/tomdong2010/good-gokafka/consumer/handler"
 	"github.com/tomdong2010/good-gokafka/consumer/sub"
 	"github.com/tomdong2010/good-gokafka/internal/config"
 	"github.com/tomdong2010/good-gokafka/internal/kafka"
 	"github.com/tomdong2010/good-gokafka/internal/message"
+	"github.com/tomdong2010/good-gokafka/internal/metrics"
 )
 
 func main() {
@@ -53,13 +57,36 @@ func run(log *slog.Logger) error {
 	groupID := config.String("KAFKA_GROUP_ID", "good-gokafka-consumer")
 	clientID := config.String("KAFKA_CLIENT_ID", "good-gokafka-consumer")
 
-	opts, closeDLQ, err := retryOptions(brokers, clientID, log)
+	failureRate, err := config.Float("SIMULATE_FAILURE_RATE", 0)
+	if err != nil {
+		return err
+	}
+	if failureRate < 0 || failureRate > 1 {
+		return fmt.Errorf("SIMULATE_FAILURE_RATE must be between 0 and 1, got %v", failureRate)
+	}
+
+	security, err := kafka.SecurityFromEnv()
+	if err != nil {
+		return err
+	}
+	consumerCfg := kafka.ConsumerConfig(clientID)
+	dlqCfg := kafka.ProducerConfig(clientID + "-dlq")
+	for _, cfg := range []*sarama.Config{consumerCfg, dlqCfg} {
+		if err := security.Apply(cfg); err != nil {
+			return err
+		}
+	}
+
+	opts, closeDLQ, err := retryOptions(brokers, dlqCfg, log)
 	if err != nil {
 		return err
 	}
 	defer closeDLQ()
 
-	subscriber, err := sub.NewKafkaSubscriber(brokers, groupID, kafka.ConsumerConfig(clientID), opts, log)
+	reg := metrics.NewRegistry()
+	opts.Registerer = reg
+
+	subscriber, err := sub.NewKafkaSubscriber(brokers, groupID, consumerCfg, opts, log)
 	if err != nil {
 		return err
 	}
@@ -72,19 +99,48 @@ func run(log *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	metricsAddr := config.String("METRICS_ADDR", ":9100")
+	stopMetrics := serveMetrics(metricsAddr, reg, log)
+	defer stopMetrics()
+
 	log.Info("consumer started", "brokers", brokers, "topics", topics, "group", groupID,
-		"max_retries", opts.MaxRetries, "dead_letter", opts.DeadLetter != nil)
-	worker := handler.NewWorkerHandler(codec, log)
-	if err := subscriber.Subscribe(ctx, topics, worker.Handle); err != nil {
+		"max_retries", opts.MaxRetries, "dead_letter", opts.DeadLetter != nil, "metrics", metricsAddr)
+	var handle sub.Handler = handler.NewWorkerHandler(codec, log).Handle
+	if failureRate > 0 {
+		log.Warn("simulating transient handler failures", "rate", failureRate)
+		handle = handler.SimulateFailures(handle, failureRate)
+	}
+	if err := subscriber.Subscribe(ctx, topics, handle); err != nil {
 		return err
 	}
 	log.Info("shutting down")
 	return nil
 }
 
+// serveMetrics exposes /metrics and /healthz on addr and returns a function
+// that shuts the server down.
+func serveMetrics(addr string, reg *prometheus.Registry, log *slog.Logger) func() {
+	mux := http.NewServeMux()
+	mux.Handle("GET /metrics", metrics.Handler(reg))
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("ok\n"))
+	})
+	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Error("metrics server", "err", err)
+		}
+	}()
+	return func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(ctx)
+	}
+}
+
 // retryOptions reads the retry and dead-letter settings and, when the
 // dead-letter topic is enabled, connects the producer that writes to it.
-func retryOptions(brokers []string, clientID string, log *slog.Logger) (sub.Options, func(), error) {
+func retryOptions(brokers []string, dlqCfg *sarama.Config, log *slog.Logger) (sub.Options, func(), error) {
 	noop := func() {}
 	maxRetries, err := config.Int("MAX_RETRIES", 3)
 	if err != nil {
@@ -103,7 +159,7 @@ func retryOptions(brokers []string, clientID string, log *slog.Logger) (sub.Opti
 	if err != nil || !enabled {
 		return opts, noop, err
 	}
-	producer, err := sarama.NewSyncProducer(brokers, kafka.ProducerConfig(clientID+"-dlq"))
+	producer, err := sarama.NewSyncProducer(brokers, dlqCfg)
 	if err != nil {
 		return sub.Options{}, noop, fmt.Errorf("create dead-letter producer: %w", err)
 	}

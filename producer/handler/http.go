@@ -7,6 +7,9 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/tomdong2010/good-gokafka/internal/message"
 	"github.com/tomdong2010/good-gokafka/producer/pub"
@@ -21,20 +24,36 @@ type HTTPHandler struct {
 	publisher pub.Publisher
 	codec     message.Codec
 	log       *slog.Logger
+	metrics   *handlerMetrics
+}
+
+// Options holds the optional dependencies of HTTPHandler.
+type Options struct {
+	Logger *slog.Logger // defaults to slog.Default()
+	// Registerer receives the handler's Prometheus metrics. When nil the
+	// metrics are collected but not exported.
+	Registerer prometheus.Registerer
 }
 
 // NewHTTPHandler returns a handler that publishes to topic using codec.
-func NewHTTPHandler(topic string, publisher pub.Publisher, codec message.Codec, log *slog.Logger) *HTTPHandler {
+func NewHTTPHandler(topic string, publisher pub.Publisher, codec message.Codec, opts Options) *HTTPHandler {
+	log := opts.Logger
 	if log == nil {
 		log = slog.Default()
 	}
-	return &HTTPHandler{topic: topic, publisher: publisher, codec: codec, log: log}
+	return &HTTPHandler{
+		topic:     topic,
+		publisher: publisher,
+		codec:     codec,
+		log:       log,
+		metrics:   newHandlerMetrics(opts.Registerer).init(topic),
+	}
 }
 
 // Routes registers the handler's endpoints.
 func (h *HTTPHandler) Routes() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /api/send", h.publish)
+	mux.Handle("POST /api/send", h.metrics.instrument("send", http.HandlerFunc(h.publish)))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, response{Message: "ok"})
 	})
@@ -56,10 +75,12 @@ func (h *HTTPHandler) publish(w http.ResponseWriter, r *http.Request) {
 		if errors.As(err, &tooLarge) {
 			status = http.StatusRequestEntityTooLarge
 		}
+		h.metrics.messages.WithLabelValues(h.topic, resultInvalid).Inc()
 		writeJSON(w, status, response{Error: "invalid request body: " + err.Error()})
 		return
 	}
 	if err := msg.Validate(); err != nil {
+		h.metrics.messages.WithLabelValues(h.topic, resultInvalid).Inc()
 		writeJSON(w, http.StatusUnprocessableEntity, response{Error: err.Error()})
 		return
 	}
@@ -67,23 +88,28 @@ func (h *HTTPHandler) publish(w http.ResponseWriter, r *http.Request) {
 	value, err := h.codec.Encode(&msg)
 	if err != nil {
 		h.log.Error("encode message", "err", err)
+		h.metrics.messages.WithLabelValues(h.topic, resultFailed).Inc()
 		writeJSON(w, http.StatusInternalServerError, response{Error: "cannot encode message"})
 		return
 	}
 
+	start := time.Now()
 	res, err := h.publisher.Publish(r.Context(), pub.Record{
 		Topic:       h.topic,
 		Key:         []byte(msg.From),
 		Value:       value,
 		ContentType: h.codec.ContentType(),
 	})
+	h.metrics.publishDuration.WithLabelValues(h.topic).Observe(time.Since(start).Seconds())
 	if err != nil {
+		h.metrics.messages.WithLabelValues(h.topic, resultFailed).Inc()
 		// Broker errors can reveal internal addresses, so keep them in the log only.
 		h.log.Error("publish message", "topic", h.topic, "err", err)
 		writeJSON(w, http.StatusBadGateway, response{Error: "cannot publish message"})
 		return
 	}
 
+	h.metrics.messages.WithLabelValues(h.topic, resultSent).Inc()
 	h.log.Debug("message published", "topic", h.topic, "partition", res.Partition, "offset", res.Offset)
 	writeJSON(w, http.StatusOK, response{Message: "message sent", Result: &res})
 }

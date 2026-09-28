@@ -116,7 +116,7 @@ func TestHTTPToConsumer(t *testing.T) {
 
 	const n = 20
 	for i, codec := range []message.Codec{message.ProtoCodec{}, message.JSONCodec{}} {
-		srv := httptest.NewServer(prodhandler.NewHTTPHandler(topic, publisher, codec, log).Routes())
+		srv := httptest.NewServer(prodhandler.NewHTTPHandler(topic, publisher, codec, prodhandler.Options{Logger: log}).Routes())
 		for j := 0; j < n/2; j++ {
 			body := fmt.Sprintf(`{"from":"user-%d-%d","content":{"header":"h","body":"b"}}`, i, j)
 			resp, err := http.Post(srv.URL+"/api/send", "application/json", strings.NewReader(body))

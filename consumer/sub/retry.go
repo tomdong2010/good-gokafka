@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/IBM/sarama"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // Headers added to records written to a dead-letter topic.
@@ -56,6 +57,9 @@ type Options struct {
 	// DeadLetter receives records that fail every attempt. When nil they are
 	// logged and skipped.
 	DeadLetter DeadLetterSink
+	// Registerer receives the consumer's Prometheus metrics. When nil the
+	// metrics are collected but not exported.
+	Registerer prometheus.Registerer
 }
 
 // KafkaDeadLetter writes failed records to "<original topic><Suffix>", keeping

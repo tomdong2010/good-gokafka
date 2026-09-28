@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: producer
+    static_configs:
+      - targets: ["producer:3000"]
+
+  # Resolves every replica of the consumer service, so scaled consumers are all scraped.
+  - job_name: consumer
+    dns_sd_configs:
+      - names: ["consumer"]
+        type: A
+        port: 9100
+        refresh_interval: 10s

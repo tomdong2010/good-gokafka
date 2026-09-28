@@ -82,6 +82,19 @@ func Int(key string, def int) (int, error) {
 	return n, nil
 }
 
+// Float parses key as a float64, returning def if it is unset.
+func Float(key string, def float64) (float64, error) {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return def, nil
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", key, err)
+	}
+	return f, nil
+}
+
 // Bool parses key as a boolean (1/0, true/false, ...), returning def if it is unset.
 func Bool(key string, def bool) (bool, error) {
 	v := strings.TrimSpace(os.Getenv(key))

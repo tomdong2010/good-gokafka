@@ -43,7 +43,7 @@ func oneRecordClaim() *fakeClaim {
 func TestRetryThenSucceed(t *testing.T) {
 	calls := 0
 	dlq := &fakeDLQ{}
-	g := &groupHandler{log: discard, opts: Options{MaxRetries: 3, RetryBackoff: time.Millisecond, DeadLetter: dlq},
+	g := &groupHandler{metrics: newSubMetrics(nil), log: discard, opts: Options{MaxRetries: 3, RetryBackoff: time.Millisecond, DeadLetter: dlq},
 		handle: func(context.Context, *Record) error {
 			calls++
 			if calls < 3 {
@@ -63,7 +63,7 @@ func TestRetryThenSucceed(t *testing.T) {
 func TestRetriesExhaustedGoToDeadLetter(t *testing.T) {
 	calls := 0
 	dlq := &fakeDLQ{}
-	g := &groupHandler{log: discard, opts: Options{MaxRetries: 2, RetryBackoff: time.Millisecond, DeadLetter: dlq},
+	g := &groupHandler{metrics: newSubMetrics(nil), log: discard, opts: Options{MaxRetries: 2, RetryBackoff: time.Millisecond, DeadLetter: dlq},
 		handle: func(context.Context, *Record) error { calls++; return errors.New("transient") }}
 	sess := &fakeSession{ctx: context.Background()}
 	if err := g.ConsumeClaim(sess, oneRecordClaim()); err != nil {
@@ -77,7 +77,7 @@ func TestRetriesExhaustedGoToDeadLetter(t *testing.T) {
 func TestPermanentErrorSkipsRetries(t *testing.T) {
 	calls := 0
 	dlq := &fakeDLQ{}
-	g := &groupHandler{log: discard, opts: Options{MaxRetries: 5, RetryBackoff: time.Millisecond, DeadLetter: dlq},
+	g := &groupHandler{metrics: newSubMetrics(nil), log: discard, opts: Options{MaxRetries: 5, RetryBackoff: time.Millisecond, DeadLetter: dlq},
 		handle: func(context.Context, *Record) error { calls++; return Permanent(errors.New("malformed")) }}
 	sess := &fakeSession{ctx: context.Background()}
 	if err := g.ConsumeClaim(sess, oneRecordClaim()); err != nil {
@@ -90,7 +90,7 @@ func TestPermanentErrorSkipsRetries(t *testing.T) {
 
 func TestDeadLetterFailureIsRetried(t *testing.T) {
 	dlq := &fakeDLQ{failures: 2}
-	g := &groupHandler{log: discard, opts: Options{RetryBackoff: time.Millisecond, DeadLetter: dlq},
+	g := &groupHandler{metrics: newSubMetrics(nil), log: discard, opts: Options{RetryBackoff: time.Millisecond, DeadLetter: dlq},
 		handle: func(context.Context, *Record) error { return Permanent(errors.New("malformed")) }}
 	sess := &fakeSession{ctx: context.Background()}
 	if err := g.ConsumeClaim(sess, oneRecordClaim()); err != nil {
@@ -107,7 +107,7 @@ func TestShutdownLeavesFailedRecordUnmarked(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
 	dlq := &fakeDLQ{failures: 1 << 30}
-	g := &groupHandler{log: discard, opts: Options{RetryBackoff: time.Millisecond, DeadLetter: dlq},
+	g := &groupHandler{metrics: newSubMetrics(nil), log: discard, opts: Options{RetryBackoff: time.Millisecond, DeadLetter: dlq},
 		handle: func(context.Context, *Record) error { return Permanent(errors.New("malformed")) }}
 	sess := &fakeSession{ctx: ctx}
 	if err := g.ConsumeClaim(sess, oneRecordClaim()); err != nil {

@@ -1,6 +1,7 @@
 # Full demo: docker compose up --build
 # Scale consumers to watch partitions rebalance: docker compose up --scale consumer=3
 # Add a web UI on http://localhost:8080: docker compose --profile ui up
+# Add Prometheus (:9090) and a Grafana dashboard (:3001): docker compose --profile monitoring up
 services:
   kafka:
     image: apache/kafka:3.8.0
@@ -48,6 +49,9 @@ services:
     environment:
       <<: *common
       KAFKA_GROUP_ID: demo-consumers
+      METRICS_ADDR: ":9100"
+      # Demo knob: fail this fraction of records to exercise retries and the DLQ, e.g. 0.3
+      SIMULATE_FAILURE_RATE: ${SIMULATE_FAILURE_RATE:-0}
     depends_on:
       kafka: { condition: service_healthy }
     restart: unless-stopped
@@ -62,3 +66,28 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:19092
     depends_on:
       kafka: { condition: service_healthy }
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    profiles: [monitoring]
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  grafana:
+    image: grafana/grafana:12.1.1
+    profiles: [monitoring]
+    ports:
+      - "3001:3000"
+    environment:
+      # Local demo only: open the dashboard without logging in.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/good-gokafka.json
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus

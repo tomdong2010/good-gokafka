@@ -15,6 +15,7 @@ import (
 	"github.com/tomdong2010/good-gokafka/internal/config"
 	"github.com/tomdong2010/good-gokafka/internal/kafka"
 	"github.com/tomdong2010/good-gokafka/internal/message"
+	"github.com/tomdong2010/good-gokafka/internal/metrics"
 	"github.com/tomdong2010/good-gokafka/producer/handler"
 	"github.com/tomdong2010/good-gokafka/producer/pub"
 )
@@ -54,7 +55,16 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	publisher, err := pub.NewKafkaPublisher(brokers, kafka.ProducerConfig(config.String("KAFKA_CLIENT_ID", "good-gokafka-producer")))
+	security, err := kafka.SecurityFromEnv()
+	if err != nil {
+		return err
+	}
+	producerCfg := kafka.ProducerConfig(config.String("KAFKA_CLIENT_ID", "good-gokafka-producer"))
+	if err := security.Apply(producerCfg); err != nil {
+		return err
+	}
+
+	publisher, err := pub.NewKafkaPublisher(brokers, producerCfg)
 	if err != nil {
 		return err
 	}
@@ -64,9 +74,15 @@ func run(log *slog.Logger) error {
 		}
 	}()
 
+	reg := metrics.NewRegistry()
+	api := handler.NewHTTPHandler(topic, publisher, codec, handler.Options{Logger: log, Registerer: reg})
+	mux := http.NewServeMux()
+	mux.Handle("/", api.Routes())
+	mux.Handle("GET /metrics", metrics.Handler(reg))
+
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           handler.NewHTTPHandler(topic, publisher, codec, log).Routes(),
+		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,

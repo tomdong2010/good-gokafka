@@ -52,6 +52,17 @@ jobs:
         if: failure()
         run: docker compose logs kafka
 
+  deploy-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate docker-compose.yml
+        run: docker compose --profile monitoring --profile ui config -q
+      - name: Validate Prometheus config
+        run: docker run --rm --entrypoint promtool -v "$PWD/deploy/prometheus:/cfg:ro" prom/prometheus:v3.5.0 check config /cfg/prometheus.yml
+      - name: Validate Grafana dashboard JSON
+        run: python3 -m json.tool deploy/grafana/dashboards/good-gokafka.json > /dev/null
+
   docker:
     runs-on: ubuntu-latest
     strategy:
