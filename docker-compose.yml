@@ -1,27 +1,12 @@
-# docker-compose.yml
----
-version: '3'
+# Single-node Kafka in KRaft mode (no ZooKeeper), reachable from the host on localhost:9092.
+# Topics are auto-created on first use.
 services:
-    zookeeper:
-        image: wurstmeister/zookeeper
-        ports:
-            - "2181:2181"
-        networks:
-            back-tier:
-    kafka:
-        image: wurstmeister/kafka
-        ports:
-            - "9092:9092"
-        depends_on:
-            - zookeeper
-        environment:
-            KAFKA_ADVERTISED_HOST_NAME: 127.0.0.1
-            KAFKA_CREATE_TOPICS: "test:1:1"
-            KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-            KAFKA_ZOOKEEPER_TIMEOUT_MS: 36000
-        volumes:
-            - /var/run/docker.sock:/var/run/docker.sock
-        networks:
-            back-tier:
-networks:
-  back-tier:
+  kafka:
+    image: apache/kafka:3.8.0
+    ports:
+      - "9092:9092"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10

@@ -1,46 +1,66 @@
+// Command consumer reads messages from Kafka as a member of a consumer group.
 package main
 
 import (
-	"fmt"
+	"context"
+	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
 
-	configEnv "github.com/joho/godotenv"
-	"github.com/tomdong2010/good-gokafka/consumer/src/handler"
-	"github.com/tomdong2010/good-gokafka/consumer/src/sub"
+	"github.com/tomdong2010/good-gokafka/consumer/handler"
+	"github.com/tomdong2010/good-gokafka/consumer/sub"
+	"github.com/tomdong2010/good-gokafka/internal/config"
+	"github.com/tomdong2010/good-gokafka/internal/message"
 )
 
 func main() {
-	fmt.Println("consumer")
+	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	if err := run(log); err != nil {
+		log.Error("consumer stopped", "err", err)
+		os.Exit(1)
+	}
+}
 
-	err := configEnv.Load(".env")
-
+func run(log *slog.Logger) error {
+	if err := config.LoadDotEnv(); err != nil {
+		return err
+	}
+	// ZOOKEEPER_HOST is accepted for old .env files; it always pointed at a Kafka broker.
+	brokers, err := config.Brokers("ZOOKEEPER_HOST")
 	if err != nil {
-		fmt.Println(".env is not loaded properly")
-		os.Exit(2)
+		return err
 	}
-
-	zookeeperHost, ok := os.LookupEnv("ZOOKEEPER_HOST")
-
-	if !ok {
-		fmt.Println("cannot load ZOOKEEPER_HOST from environment")
-		os.Exit(2)
+	topics := config.List("KAFKA_TOPIC")
+	if len(topics) == 0 {
+		_, err := config.Required("KAFKA_TOPIC")
+		return err
 	}
-
-	topic, ok := os.LookupEnv("KAFKA_TOPIC")
-
-	if !ok {
-		fmt.Println("cannot load KAFKA_TOPIC from environment")
-		os.Exit(2)
-	}
-
-	subscriber, err := sub.NewSubscriber(zookeeperHost)
-
+	codec, err := message.NewCodec(config.String("MESSAGE_FORMAT", message.FormatProto))
 	if err != nil {
-		fmt.Println("error create subscriber")
-		os.Exit(2)
+		return err
 	}
+	groupID := config.String("KAFKA_GROUP_ID", "good-gokafka-consumer")
 
-	workerHandler := handler.NewWorkerHandler(topic, subscriber)
+	subscriber, err := sub.NewKafkaSubscriber(brokers, groupID,
+		sub.NewConfig(config.String("KAFKA_CLIENT_ID", "good-gokafka-consumer")), log)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := subscriber.Close(); err != nil {
+			log.Error("close subscriber", "err", err)
+		}
+	}()
 
-	workerHandler.Pool()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	log.Info("consumer started", "brokers", brokers, "topics", topics, "group", groupID)
+	worker := handler.NewWorkerHandler(codec, log)
+	if err := subscriber.Subscribe(ctx, topics, worker.Handle); err != nil {
+		return err
+	}
+	log.Info("shutting down")
+	return nil
 }

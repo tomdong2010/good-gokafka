@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package message;
+
+option go_package = "github.com/tomdong2010/good-gokafka/internal/message/pb";
+
+// Field numbers are the wire contract: never renumber or reuse them.
+message Content {
+  string header = 1;
+  string body = 2;
+}
+
+message Message {
+  string from = 1;
+  Content content = 2;
+}
